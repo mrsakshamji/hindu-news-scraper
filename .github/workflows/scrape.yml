@@ -1,0 +1,34 @@
+name: Hindu News Scraper
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'  # every 15 minutes
+  workflow_dispatch:        # manual trigger support
+
+jobs:
+  run-scraper:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        pip install feedparser requests beautifulsoup4
+
+    - name: Run the scraper
+      run: python main.py
+
+    - name: Commit & push if data changed
+      run: |
+        git config --global user.name 'github-actions'
+        git config --global user.email 'github-actions@github.com'
+        git add hindu-main-news.json
+        git diff --cached --quiet || git commit -m "⏰ Auto update news JSON"
+        git push
