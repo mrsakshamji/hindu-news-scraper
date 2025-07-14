@@ -3,7 +3,10 @@ name: Hindu News Scraper
 on:
   schedule:
     - cron: "*/15 * * * *"  # Every 15 minutes (UTC time)
-  workflow_dispatch:  # Optional: allows manual run from GitHub UI
+  workflow_dispatch:         # Optional: manual trigger
+
+permissions:
+  contents: write            # ✅ REQUIRED: allow GitHub Actions to push commits
 
 jobs:
   scrape:
