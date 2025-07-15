@@ -1,6 +1,6 @@
 # 📰 Hindu News Scraper
 
-This repository contains a simple automated news scraper that extracts top headlines from the Hindustan Times website and saves them in a structured JSON format (`hindu-main-news.json`). It is powered by a Python script and runs every 15 minutes using GitHub Actions.
+This repository contains a simple automated news scraper that extracts top headlines from the Hindustan Times website and saves them in a structured JSON format (`hindu-main-news.json`). It is powered by a Python script and runs every 5 minutes using GitHub Actions.
 
 ## 🌐 Live JSON Feed
 
@@ -34,7 +34,7 @@ Each news item in the JSON file contains:
 
 - **Python 3.11+**
 - **Requests + BeautifulSoup** for scraping
-- **GitHub Actions** for automation (runs every 15 minutes)
+- **GitHub Actions** for automation (runs every 5 minutes)
 - **GitHub Pages** for serving JSON publicly
 
 ---
@@ -43,7 +43,7 @@ Each news item in the JSON file contains:
 
 1. The Python script (`main.py`) scrapes latest headlines.
 2. The scraped data is saved in `hindu-main-news.json`.
-3. A GitHub Actions workflow automatically runs the script every 15 minutes.
+3. A GitHub Actions workflow automatically runs the script every 5 minutes.
 4. Changes are committed and pushed back to the repository.
 5. GitHub Pages serves the updated JSON file publicly.
 
@@ -70,7 +70,7 @@ The JSON file will be saved as `hindu-main-news.json`.
 
 See `.github/workflows/scrape.yml`:
 
-- Runs every 15 minutes via cron.
+- Runs every 5 minutes via cron.
 - Commits only if content changes.
 - Pushes updated JSON to main branch.
 - GitHub Pages hosts the latest file.
