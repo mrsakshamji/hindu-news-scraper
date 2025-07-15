@@ -4,26 +4,29 @@ from bs4 import BeautifulSoup
 import json
 import time
 import os
+from PIL import Image
+from io import BytesIO
+import base64
 
-# RSS feed URL
+# 🔑 ImageKit credentials
+IMAGEKIT_PUBLIC_KEY = "public_DoXYDWBqB/du3xdZsTK7iRxIiZY="
+IMAGEKIT_PRIVATE_KEY = "private_gOdixB3YlB9UlPGQz/cLyUS0wo4="
+IMAGEKIT_UPLOAD_URL = "https://upload.imagekit.io/api/v1/files/upload"
+
+# 📰 RSS feed URL
 rss_url = "https://www.thehindu.com/news/national/feeder/default.rss"
-
-# Parse the RSS feed
 feed = feedparser.parse(rss_url)
-
-print("🔄 Processing articles...\n")
-print(f"📥 Total entries in RSS feed: {len(feed.entries)}\n")
+print(f"🔄 Processing {len(feed.entries)} articles...\n")
 
 headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Referer": "https://www.google.com"
+    "User-Agent": "Mozilla/5.0",
+    "Accept-Language": "en-US,en;q=0.9"
 }
 
 output_file = "hindu-main-news.json"
 articles = []
 
-# ✅ Load existing articles if file exists
+# ✅ Load existing articles
 existing_links = set()
 if os.path.exists(output_file):
     with open(output_file, "r", encoding="utf-8") as f:
@@ -31,75 +34,88 @@ if os.path.exists(output_file):
             existing_articles = json.load(f)
             articles = existing_articles
             existing_links = {a["link"] for a in existing_articles}
-        except json.JSONDecodeError:
-            print("⚠️ Invalid or empty existing file. Starting fresh.")
+        except:
+            print("⚠️ Starting with a fresh file.")
             articles = []
 
-new_count = 0
+# 🖼️ Image upload function
+def upload_to_imagekit(image_url, filename, folder="/hindu-news"):
+    try:
+        response = requests.get(image_url)
+        response.raise_for_status()
 
-# Process feed entries
-for index, entry in enumerate(feed.entries):
+        img = Image.open(BytesIO(response.content)).convert("RGB")
+        buffer = BytesIO()
+        img.save(buffer, format="WEBP", quality=80)
+        encoded = base64.b64encode(buffer.getvalue()).decode()
+
+        headers = {
+            "Authorization": "Basic " + base64.b64encode(f"{IMAGEKIT_PRIVATE_KEY}:".encode()).decode()
+        }
+
+        payload = {
+            "file": encoded,
+            "fileName": filename + ".webp",
+            "folder": folder,
+            "useUniqueFileName": "true"
+        }
+
+        r = requests.post(IMAGEKIT_UPLOAD_URL, headers=headers, data=payload)
+        r.raise_for_status()
+        return r.json().get("url")
+    except Exception as e:
+        print(f"⚠️ Image upload failed: {e}")
+        return image_url  # fallback
+
+# 🔄 Process new articles
+new_count = 0
+for i, entry in enumerate(feed.entries):
     title = entry.title
     link = entry.link
     published = entry.published
 
     if link in existing_links:
-        print(f"⏩ Skipping (Already Exists): {link}")
+        print(f"⏩ Skipped (already exists): {link}")
         continue
 
-    print(f"🔗 [{index + 1}] Fetching: {link}")
+    print(f"🔗 [{i+1}] Fetching: {title[:60]}...")
 
     try:
-        response = requests.get(link, headers=headers)
-        response.raise_for_status()
+        page = requests.get(link, headers=headers)
+        soup = BeautifulSoup(page.content, "html.parser")
 
-        soup = BeautifulSoup(response.content, "html.parser")
-
-        # ✅ Updated content block selector
-        content_block = (
-            soup.find("div", class_="schemaDiv", id="schemaDiv") or
+        content_div = (
+            soup.find("div", id="schemaDiv") or
             soup.find("div", class_="articlebodycontent") or
             soup.find("div", {"itemprop": "articleBody"})
         )
 
-        if not content_block:
-            print(f"⚠️ No content block found. Saving HTML for debugging: debug_{index + 1}.html")
-            with open(f"debug_{index + 1}.html", "w", encoding="utf-8") as debug_file:
-                debug_file.write(soup.prettify())
+        if not content_div:
+            print("⚠️ Content not found")
             continue
 
-        # Extract article paragraphs
-        paragraphs = content_block.find_all("p")
-        if not paragraphs:
-            print(f"⚠️ No paragraphs inside content block: {link}")
-            continue
+        paragraphs = content_div.find_all("p")
         content = "\n".join(p.get_text(strip=True) for p in paragraphs)
 
-        # Featured image
-        image_url = ""
-        image_tag = soup.find("meta", property="og:image")
-        if image_tag and image_tag.get("content"):
-            image_url = image_tag["content"]
+        # Summary
+        desc = soup.find("meta", attrs={"name": "description"})
+        summary = desc.get("content", "") if desc else ""
 
         # Author
-        author = ""
         author_tag = soup.find("span", class_="authorName") or soup.find("meta", attrs={"name": "author"})
-        if author_tag:
-            author = author_tag.get_text(strip=True) if author_tag.name == "span" else author_tag.get("content", "")
+        author = author_tag.get_text(strip=True) if author_tag and author_tag.name == "span" else (author_tag.get("content") if author_tag else "")
 
-        # Summary
-        summary = ""
-        desc_tag = soup.find("meta", attrs={"name": "description"})
-        if desc_tag and desc_tag.get("content"):
-            summary = desc_tag["content"]
+        # Image
+        image_url = ""
+        og_image = soup.find("meta", property="og:image")
+        if og_image and og_image.get("content"):
+            image_url = og_image["content"]
+            image_url = upload_to_imagekit(image_url, f"hindu_{hash(image_url)}")
 
         # Tags
-        tags = []
-        tag_elements = soup.find_all("a", class_="tag")
-        if tag_elements:
-            tags = [t.get_text(strip=True) for t in tag_elements]
+        tags = [t.get_text(strip=True) for t in soup.find_all("a", class_="tag")]
 
-        # Save final article
+        # Add to article list
         articles.append({
             "title": title,
             "link": link,
@@ -113,22 +129,16 @@ for index, entry in enumerate(feed.entries):
 
         existing_links.add(link)
         new_count += 1
-
         print(f"✅ Added: {title[:60]}...")
-
-        time.sleep(1)  # Prevent IP block
+        time.sleep(1)  # Prevent IP blocking
 
     except Exception as e:
-        print(f"❌ Error fetching {link}: {e}")
+        print(f"❌ Error: {e}")
         continue
 
-# Save final JSON
+# 💾 Save JSON
 with open(output_file, "w", encoding="utf-8") as f:
     json.dump(articles, f, ensure_ascii=False, indent=2)
 
-print(f"\n✅ Done. Added {new_count} new articles.")
-print(f"🗂️ Total articles saved: {len(articles)}")
-
-# Preview
-print("\n=== Final JSON Preview (First 3 Articles) ===\n")
-print(json.dumps(articles[:3], indent=2, ensure_ascii=False))
+print(f"\n✅ Completed. {new_count} new articles added.")
+print(f"📁 Total articles saved: {len(articles)}")
