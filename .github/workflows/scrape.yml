@@ -2,7 +2,7 @@ name: Hindu News Scraper
 
 on:
   schedule:
-    - cron: "*/15 * * * *"  # Every 15 minutes (UTC time)
+    - cron: "*/5 * * * *"  # Every 5 minutes (UTC time)
   workflow_dispatch:         # Optional: manual trigger
 
 permissions:
