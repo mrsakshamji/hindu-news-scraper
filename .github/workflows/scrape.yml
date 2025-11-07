@@ -3,10 +3,10 @@ name: Hindu News Scraper
 on:
   schedule:
     - cron: "*/5 * * * *"  # Every 5 minutes (UTC time)
-  workflow_dispatch:         # Optional: manual trigger
+  workflow_dispatch:        # Optional: manual trigger
 
 permissions:
-  contents: write            # ✅ REQUIRED: allow GitHub Actions to push commits
+  contents: write           # ✅ REQUIRED: allow GitHub Actions to push commits
 
 jobs:
   scrape:
@@ -27,6 +27,23 @@ jobs:
       - name: Run scraper
         run: python main.py
 
+      # --- NEW STEP 1: Create ca.pem file ---
+      # This securely writes your SSL certificate from a GitHub Secret
+      - name: Create ca.pem for Aiven
+        run: echo "${{ secrets.AIVEN_CA_PEM }}" > ca.pem
+
+      # --- NEW STEP 2: Run the DB Importer ---
+      # This runs your jsontodb.py script
+      # The 'env' block securely passes your secrets as environment variables
+      - name: Run DB Importer
+        run: python jsontodb.py
+        env:
+          AIVEN_DB_HOST: ${{ secrets.AIVEN_DB_HOST }}
+          AIVEN_DB_USER: ${{ secrets.AIVEN_DB_USER }}
+          AIVEN_DB_PASS: ${{ secrets.AIVEN_DB_PASS }}
+          AIVEN_DB_NAME: ${{ secrets.AIVEN_DB_NAME }}
+
+      # --- This step remains the same ---
       - name: Commit and push changes
         run: |
           git config --global user.email "actions@github.com"
