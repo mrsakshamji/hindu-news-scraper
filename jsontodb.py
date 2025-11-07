@@ -3,9 +3,9 @@ import time
 import datetime
 import pymysql
 import os
-import regex as re  # <-- ADDED
-import hashlib     # <-- ADDED
-from unidecode import unidecode  # <-- ADDED
+import regex as re
+import hashlib
+from unidecode import unidecode
 from pymysql.constants import CLIENT
 
 # ===== FILE & CONFIG =====
@@ -36,11 +36,9 @@ def slugify(text):
         text = ""
 
     # 1. $text = trim(preg_replace('/[\s\p{Zs}]+/u', '-', $text));
-    #    We use the 'regex' library (imported as 're') for \p{Zs}
     text_normalized = re.sub(r'[\s\p{Zs}]+', '-', text.strip(), flags=re.UNICODE)
     
     # 2. $trans = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $text);
-    #    We use 'unidecode' for this
     trans = unidecode(text_normalized)
     
     ascii_slug = ''
@@ -55,17 +53,17 @@ def slugify(text):
         ascii_slug = ascii_slug.strip('-').lower()
 
     # 7. Get original text hash (for both cases)
-    #    PHP: md5($text)
-    #    We must hash the *original* text, not the normalized one
-    md5_hash_orig = hashlib.md5(text.encode('utf-8')).hexdigest()
+    #    ***** THIS IS THE FIX *****
+    #    We hash the NORMALIZED text, just like the PHP script
+    md5_hash_norm = hashlib.md5(text_normalized.encode('utf-8')).hexdigest()
 
     # 8. if (!$asciiSlug) { ... }
     if not ascii_slug:
         # 9. return 'hindi-' . substr(md5($text), 0, 10);
-        return 'hindi-' + md5_hash_orig[:10]
+        return 'hindi-' + md5_hash_norm[:10]
 
     # 10. return $asciiSlug . '-' . substr(md5($text), 0, 6);
-    return ascii_slug + '-' + md5_hash_orig[:6]
+    return ascii_slug + '-' + md5_hash_norm[:6]
 
 # ========== CONNECT ==========
 print("🔌 Connecting to MySQL (Aiven)...")
