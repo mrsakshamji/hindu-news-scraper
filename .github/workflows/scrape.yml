@@ -26,6 +26,9 @@ jobs:
 
       - name: Run scraper
         run: python main.py
+        env: 
+          IMAGEKIT_PUBLIC_KEY: ${{ secrets.IMAGEKIT_PUBLIC_KEY }}
+          IMAGEKIT_PRIVATE_KEY: ${{ secrets.IMAGEKIT_PRIVATE_KEY }}
 
       # --- NEW STEP 1: Create ca.pem file ---
       # This securely writes your SSL certificate from a GitHub Secret
