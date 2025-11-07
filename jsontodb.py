@@ -2,7 +2,10 @@ import json
 import time
 import datetime
 import pymysql
-import os  # <-- Import os
+import os
+import regex as re  # <-- ADDED
+import hashlib     # <-- ADDED
+from unidecode import unidecode  # <-- ADDED
 from pymysql.constants import CLIENT
 
 # ===== FILE & CONFIG =====
@@ -22,6 +25,47 @@ SSL_CA = "ca.pem"  # This file will be created by the GitHub Action
 # ===== Check for missing credentials =====
 if not all([DB_HOST, DB_USER, DB_PASS, DB_NAME]):
     raise ValueError("❌ CRITICAL: Missing one or more AIVEN environment variables (AIVEN_DB_HOST, AIVEN_DB_USER, AIVEN_DB_PASS, AIVEN_DB_NAME). Please set them in GitHub Secrets.")
+
+# ========== SLUGIFY FUNCTION (Matches PHP) ==========
+def slugify(text):
+    """
+    Generates a slug identical to the PHP function using
+    regex, unidecode, and hashlib.
+    """
+    if not text:
+        text = ""
+
+    # 1. $text = trim(preg_replace('/[\s\p{Zs}]+/u', '-', $text));
+    #    We use the 'regex' library (imported as 're') for \p{Zs}
+    text_normalized = re.sub(r'[\s\p{Zs}]+', '-', text.strip(), flags=re.UNICODE)
+    
+    # 2. $trans = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $text);
+    #    We use 'unidecode' for this
+    trans = unidecode(text_normalized)
+    
+    ascii_slug = ''
+    
+    # 3. if ($trans && preg_match('/[a-zA-Z0-9]/', $trans)) { ... }
+    if trans and re.search(r'[a-zA-Z0-9]', trans):
+        # 4. $asciiSlug = preg_replace('/[^a-zA-Z0-9\-]+/', '-', $trans);
+        ascii_slug = re.sub(r'[^a-zA-Z0-9\-]+', '-', trans)
+        # 5. $asciiSlug = preg_replace('/-+/', '-', $asciiSlug);
+        ascii_slug = re.sub(r'-+', '-', ascii_slug)
+        # 6. $asciiSlug = strtolower(trim($asciiSlug, '-'));
+        ascii_slug = ascii_slug.strip('-').lower()
+
+    # 7. Get original text hash (for both cases)
+    #    PHP: md5($text)
+    #    We must hash the *original* text, not the normalized one
+    md5_hash_orig = hashlib.md5(text.encode('utf-8')).hexdigest()
+
+    # 8. if (!$asciiSlug) { ... }
+    if not ascii_slug:
+        # 9. return 'hindi-' . substr(md5($text), 0, 10);
+        return 'hindi-' + md5_hash_orig[:10]
+
+    # 10. return $asciiSlug . '-' . substr(md5($text), 0, 6);
+    return ascii_slug + '-' + md5_hash_orig[:6]
 
 # ========== CONNECT ==========
 print("🔌 Connecting to MySQL (Aiven)...")
@@ -69,10 +113,12 @@ print(f"✅ Loaded {total} articles\n")
 # ========== CREATE TABLE IF NOT EXISTS ==========
 print("🧱 Ensuring table structure is correct...")
 
+# <-- MODIFIED: Added 'slug' column
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS news_articles (
     id INT AUTO_INCREMENT PRIMARY KEY,
     title VARCHAR(500),
+    slug VARCHAR(255) NULL,
     link VARCHAR(1000),
     published DATETIME NULL,
     author VARCHAR(255),
@@ -103,15 +149,36 @@ if cursor.rowcount == 0:
     print("🔑 Adding unique index on 'link' (first 255 chars)...")
     cursor.execute("ALTER TABLE news_articles ADD UNIQUE KEY unique_link (link(255))")
     conn.commit()
-    print("✅ Unique index added!\n")
+    print("✅ Unique index 'unique_link' added!\n")
 else:
-    print("🔑 Unique index already exists.\n")
+    print("🔑 'unique_link' index already exists.\n")
+
+# <-- ADDED: Check for and add 'idx_slug' index
+cursor.execute("""
+SHOW INDEX FROM news_articles WHERE Key_name = 'idx_slug';
+""")
+if cursor.rowcount == 0:
+    print("🔑 Adding unique index 'idx_slug' on 'slug'...")
+    try:
+        cursor.execute("ALTER TABLE news_articles ADD UNIQUE KEY idx_slug (slug)")
+        conn.commit()
+        print("✅ Unique index 'idx_slug' added!\n")
+    except Exception as e:
+        if "1061" in str(e): # Duplicate key name
+             print("🟡 'idx_slug' index already exists.")
+        else:
+             print(f"⚠️  Could not add slug index, may already exist. Error: {e}")
+        conn.rollback()
+else:
+    print("🔑 'idx_slug' index already exists.\n")
+
 
 # ========== PREPARE SQL ==========
+# <-- MODIFIED: Added 'slug' column and a '%s' placeholder
 sql = """
 INSERT IGNORE INTO news_articles 
-(title, link, published, author, summary, tags, image, content, raw_json)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+(title, slug, link, published, author, summary, tags, image, content, raw_json)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 """
 
 # ========== IMPORT LOOP ==========
@@ -128,6 +195,8 @@ for batch_start in range(0, total, BATCH_SIZE):
         record_num += 1
         title = data.get("title", "")
         link = data.get("link", "")
+        
+        slug = slugify(title)  # <-- MODIFIED: Generate the slug
 
         # Skip empty or invalid links
         if not link:
@@ -156,7 +225,8 @@ for batch_start in range(0, total, BATCH_SIZE):
         content = data.get("content", "")
         raw_json = json.dumps(data, ensure_ascii=False)
 
-        values.append((title, link, published_dt, author, summary, tags, image, content, raw_json))
+        # <-- MODIFIED: Added 'slug' to the tuple
+        values.append((title, slug, link, published_dt, author, summary, tags, image, content, raw_json))
 
     if not values:
         continue # Skip if batch was empty (e.g., all invalid links)
@@ -176,8 +246,8 @@ for batch_start in range(0, total, BATCH_SIZE):
         eta = (total - (inserted + skipped)) / rate if rate > 0 else 0
 
         print(f"🟩 Batch done: Inserted {affected}, Skipped {batch_skipped}")
-        print(f"    → Total: {inserted} inserted / {skipped} skipped / {total} total ({percent}%)")
-        print(f"    → {rate:.1f}/sec — ETA {eta:.0f}s\n")
+        print(f"   → Total: {inserted} inserted / {skipped} skipped / {total} total ({percent}%)")
+        print(f"   → {rate:.1f}/sec — ETA {eta:.0f}s\n")
         
     except Exception as e:
         print(f"❌ ERROR during batch insert: {e}")
