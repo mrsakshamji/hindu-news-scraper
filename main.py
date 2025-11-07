@@ -40,6 +40,9 @@ if os.path.exists(output_file):
 
 # 🖼️ Image upload function
 def upload_to_imagekit(image_url, filename, folder="/hindu-news"):
+    if not IMAGEKIT_PRIVATE_KEY or not IMAGEKIT_PUBLIC_KEY:
+        print("⚠️ ImageKit keys not found. Skipping image upload.")
+        return image_url
     try:
         response = requests.get(image_url)
         response.raise_for_status()
