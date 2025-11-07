@@ -9,8 +9,8 @@ from io import BytesIO
 import base64
 
 # 🔑 ImageKit credentials
-IMAGEKIT_PUBLIC_KEY = "public_DoXYDWBqB/du3xdZsTK7iRxIiZY="
-IMAGEKIT_PRIVATE_KEY = "private_gOdixB3YlB9UlPGQz/cLyUS0wo4="
+IMAGEKIT_PUBLIC_KEY = os.environ.get("IMAGEKIT_PUBLIC_KEY")
+IMAGEKIT_PRIVATE_KEY = os.environ.get("IMAGEKIT_PRIVATE_KEY")
 IMAGEKIT_UPLOAD_URL = "https://upload.imagekit.io/api/v1/files/upload"
 
 # 📰 RSS feed URL
